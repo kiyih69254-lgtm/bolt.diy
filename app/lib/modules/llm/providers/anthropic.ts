@@ -12,32 +12,39 @@ export default class AnthropicProvider extends BaseProvider {
     apiTokenKey: 'ANTHROPIC_API_KEY',
   };
 
+  // 1. Aapke custom Aerolink ke models ko yahan set kar diya hai fallbacks ke liye
   staticModels: ModelInfo[] = [
-    /*
-     * Essential fallback models - only the most stable/reliable ones
-     * Claude 3.5 Sonnet: 200k context, excellent for complex reasoning and coding
-     */
     {
-      name: 'claude-3-5-sonnet-20241022',
-      label: 'Claude 3.5 Sonnet',
+      name: 'claude-opus-4-8',
+      label: 'Claude Opus 4.8',
       provider: 'Anthropic',
       maxTokenAllowed: 200000,
-      maxCompletionTokens: 128000,
+      maxCompletionTokens: 32000,
     },
-
-    // Claude 3 Haiku: 200k context, fastest and most cost-effective
     {
-      name: 'claude-3-haiku-20240307',
-      label: 'Claude 3 Haiku',
+      name: 'claude-opus-4-7',
+      label: 'Claude Opus 4.7',
       provider: 'Anthropic',
       maxTokenAllowed: 200000,
-      maxCompletionTokens: 128000,
+      maxCompletionTokens: 32000,
     },
-
-    // Claude Opus 4: 200k context, 32k output limit (latest flagship model)
     {
-      name: 'claude-opus-4-20250514',
-      label: 'Claude 4 Opus',
+      name: 'claude-sonnet-4-6',
+      label: 'Claude Sonnet 4.6',
+      provider: 'Anthropic',
+      maxTokenAllowed: 200000,
+      maxCompletionTokens: 64000,
+    },
+    {
+      name: 'claude-opus-4-6',
+      label: 'Claude Opus 4.6',
+      provider: 'Anthropic',
+      maxTokenAllowed: 200000,
+      maxCompletionTokens: 32000,
+    },
+    {
+      name: 'claude-haiku-4-5-20251001',
+      label: 'Claude Haiku 4.5',
       provider: 'Anthropic',
       maxTokenAllowed: 200000,
       maxCompletionTokens: 32000,
@@ -61,49 +68,31 @@ export default class AnthropicProvider extends BaseProvider {
       throw `Missing Api Key configuration for ${this.name} provider`;
     }
 
-    const response = await fetch(`https://api.anthropic.com/v1/models`, {
+    // 2. Yahan custom API URL se models dynamic load honge
+    const response = await fetch(`https://capi.aerolink.lat/v1/models`, {
       headers: {
-        'x-api-key': `${apiKey}`,
-        'anthropic-version': '2023-06-01',
+        'Authorization': `Bearer ${apiKey}`,
       },
     });
 
     const res = (await response.json()) as any;
     const staticModelIds = this.staticModels.map((m) => m.name);
 
-    const data = res.data.filter((model: any) => model.type === 'model' && !staticModelIds.includes(model.id));
+    // Agar data array hai tabhi process karega taaki crash na ho
+    const modelData = Array.isArray(res) ? res : (res.data || []);
+    const data = modelData.filter((model: any) => (model.type === 'model' || model.id) && !staticModelIds.includes(model.id));
 
     return data.map((m: any) => {
-      // Get accurate context window from Anthropic API
-      let contextWindow = 32000; // default fallback
+      let contextWindow = 200000; // Custom provider ke liye 200k base backup
+      let maxCompletionTokens = 32000;
 
-      // Anthropic provides max_tokens in their API response
-      if (m.max_tokens) {
-        contextWindow = m.max_tokens;
-      } else if (m.id?.includes('claude-3-5-sonnet')) {
-        contextWindow = 200000; // Claude 3.5 Sonnet has 200k context
-      } else if (m.id?.includes('claude-3-haiku')) {
-        contextWindow = 200000; // Claude 3 Haiku has 200k context
-      } else if (m.id?.includes('claude-3-opus')) {
-        contextWindow = 200000; // Claude 3 Opus has 200k context
-      } else if (m.id?.includes('claude-3-sonnet')) {
-        contextWindow = 200000; // Claude 3 Sonnet has 200k context
-      }
-
-      // Determine completion token limits based on specific model
-      let maxCompletionTokens = 128000; // default for older Claude 3 models
-
-      if (m.id?.includes('claude-opus-4')) {
-        maxCompletionTokens = 32000; // Claude 4 Opus: 32K output limit
-      } else if (m.id?.includes('claude-sonnet-4')) {
-        maxCompletionTokens = 64000; // Claude 4 Sonnet: 64K output limit
-      } else if (m.id?.includes('claude-4')) {
-        maxCompletionTokens = 32000; // Other Claude 4 models: conservative 32K limit
+      if (m.id?.includes('sonnet-4')) {
+        maxCompletionTokens = 64000;
       }
 
       return {
         name: m.id,
-        label: `${m.display_name} (${Math.floor(contextWindow / 1000)}k context)`,
+        label: `${m.display_name || m.id} (${Math.floor(contextWindow / 1000)}k context)`,
         provider: this.name,
         maxTokenAllowed: contextWindow,
         maxCompletionTokens,
@@ -125,9 +114,11 @@ export default class AnthropicProvider extends BaseProvider {
       defaultBaseUrlKey: '',
       defaultApiTokenKey: 'ANTHROPIC_API_KEY',
     });
+    
+    // 3. Yahan createAnthropic ke andar custom baseURL inject kar diya hai
     const anthropic = createAnthropic({
       apiKey,
-      headers: { 'anthropic-beta': 'output-128k-2025-02-19' },
+      baseURL: 'https://capi.aerolink.lat/v1',
     });
 
     return anthropic(model);
